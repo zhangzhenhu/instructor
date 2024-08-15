@@ -11,6 +11,7 @@ from typing import (
     Generic,
     Protocol,
     TypeVar,
+    Tuple
 )
 import os
 
@@ -23,7 +24,6 @@ from openai.types.chat import (
 
 if TYPE_CHECKING:
     from anthropic.types import Usage as AnthropicUsage
-
 
 logger = logging.getLogger("instructor")
 R_co = TypeVar("R_co", covariant=True)
@@ -77,13 +77,13 @@ def get_provider(base_url: str) -> Provider:
 def extract_json_from_codeblock(content: str) -> str:
     first_paren = content.find("{")
     last_paren = content.rfind("}")
-    return content[first_paren : last_paren + 1]
+    return content[first_paren: last_paren + 1]
 
 
-def extract_json_from_stream(chunks: Iterable[str]) -> Generator[str, None, None]:
+def extract_json_from_stream(chunks: Iterable[Tuple[str, Any]]) -> Generator[str, None, None]:
     capturing = False
     brace_count = 0
-    for chunk in chunks:
+    for chunk, _ in chunks:
         for char in chunk:
             if char == "{":
                 capturing = True
@@ -100,11 +100,11 @@ def extract_json_from_stream(chunks: Iterable[str]) -> Generator[str, None, None
 
 
 async def extract_json_from_stream_async(
-    chunks: AsyncGenerator[str, None],
+        chunks: AsyncGenerator[Tuple[str, Any], None],
 ) -> AsyncGenerator[str, None]:
     capturing = False
     brace_count = 0
-    async for chunk in chunks:
+    async for chunk, _ in chunks:
         for char in chunk:
             if char == "{":
                 capturing = True
@@ -121,8 +121,8 @@ async def extract_json_from_stream_async(
 
 
 def update_total_usage(
-    response: T_Model,
-    total_usage: OpenAIUsage | AnthropicUsage,
+        response: T_Model,
+        total_usage: OpenAIUsage | AnthropicUsage,
 ) -> T_Model | ChatCompletion:
     response_usage = getattr(response, "usage", None)
     if isinstance(response_usage, OpenAIUsage) and isinstance(total_usage, OpenAIUsage):
@@ -137,7 +137,7 @@ def update_total_usage(
         from anthropic.types import Usage as AnthropicUsage
 
         if isinstance(response_usage, AnthropicUsage) and isinstance(
-            total_usage, AnthropicUsage
+                total_usage, AnthropicUsage
         ):
             total_usage.input_tokens += response_usage.input_tokens or 0
             total_usage.output_tokens += response_usage.output_tokens or 0
@@ -162,9 +162,9 @@ def dump_message(message: ChatCompletionMessage) -> ChatCompletionMessageParam:
     if hasattr(message, "tool_calls") and message.tool_calls is not None:
         ret["tool_calls"] = message.model_dump()["tool_calls"]
     if (
-        hasattr(message, "function_call")
-        and message.function_call is not None
-        and ret["content"]
+            hasattr(message, "function_call")
+            and message.function_call is not None
+            and ret["content"]
     ):
         ret["content"] += json.dumps(message.model_dump()["function_call"])
     return ret
@@ -231,7 +231,7 @@ class classproperty(Generic[R_co]):
 
 
 def transform_to_gemini_prompt(
-    messages_chatgpt: list[ChatCompletionMessageParam],
+        messages_chatgpt: list[ChatCompletionMessageParam],
 ) -> list[dict[str, Any]]:
     messages_gemini: list[dict[str, Any]] = []
     system_prompt = ""

@@ -163,7 +163,11 @@ def process_response(
     # ? attaching usage data and the raw response to the model we return.
     if isinstance(model, IterableBase):
         logger.debug(f"Returning takes from IterableBase")
-        return [task for task in model.tasks]
+        tasks = []
+        for task in model.tasks:
+            task.__dict__['raw_response'] = response
+            tasks.append(task)
+        return tasks
 
     if isinstance(response_model, ParallelBase):
         logger.debug(f"Returning model from ParallelBase")
@@ -171,8 +175,8 @@ def process_response(
 
     if isinstance(model, AdapterBase):
         logger.debug(f"Returning model from AdapterBase")
-        return model.content
-
+        return model
+    model.__dict__['raw_response'] = response
     model._raw_response = response
     return model
 
@@ -259,10 +263,10 @@ def handle_response_model(
             if mode == Mode.MISTRAL_TOOLS:
                 new_kwargs["tool_choice"] = "any"
             else:
-                new_kwargs["tool_choice"] = {
+                new_kwargs["tool_choice"] = kwargs.get("tool_choice", {
                     "type": "function",
                     "function": {"name": response_model.openai_schema["name"]},
-                }
+                }, )
         elif mode in {Mode.JSON, Mode.MD_JSON, Mode.JSON_SCHEMA}:
             # If its a JSON Mode we need to massage the prompt a bit
             # in order to get the response we want in a json format

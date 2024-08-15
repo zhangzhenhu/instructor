@@ -1,4 +1,4 @@
-from typing import Any, Optional, cast, ClassVar
+from typing import Any, Optional, cast, ClassVar, Tuple
 from collections.abc import AsyncGenerator, Generator, Iterable
 
 from pydantic import BaseModel, Field, create_model
@@ -13,7 +13,7 @@ class IterableBase:
 
     @classmethod
     def from_streaming_response(
-        cls, completion: Iterable[Any], mode: Mode, **kwargs: Any
+            cls, completion: Iterable[Any], mode: Mode, **kwargs: Any
     ) -> Generator[BaseModel, None, None]:  # noqa: ARG003
         json_chunks = cls.extract_json(completion, mode)
 
@@ -24,7 +24,7 @@ class IterableBase:
 
     @classmethod
     async def from_streaming_response_async(
-        cls, completion: AsyncGenerator[Any, None], mode: Mode, **kwargs: Any
+            cls, completion: AsyncGenerator[Any, None], mode: Mode, **kwargs: Any
     ) -> AsyncGenerator[BaseModel, None]:
         json_chunks = cls.extract_json_async(completion, mode)
 
@@ -35,68 +35,74 @@ class IterableBase:
 
     @classmethod
     def tasks_from_chunks(
-        cls, json_chunks: Iterable[str], **kwargs: Any
+            cls, json_chunks: Iterable[Tuple[str, Any]], **kwargs: Any
     ) -> Generator[BaseModel, None, None]:
         started = False
         potential_object = ""
-        for chunk in json_chunks:
+        for chunk, completion in json_chunks:
+            if not chunk:
+                continue
             potential_object += chunk
             if not started:
                 if "[" in chunk:
                     started = True
-                    potential_object = chunk[chunk.find("[") + 1 :]
+                    potential_object = chunk[chunk.find("[") + 1:]
                 continue
 
             task_json, potential_object = cls.get_object(potential_object, 0)
             if task_json:
                 assert cls.task_type is not None
                 obj = cls.task_type.model_validate_json(task_json, **kwargs)
+                obj.__dict__['raw_response'] = completion
                 yield obj
 
     @classmethod
     async def tasks_from_chunks_async(
-        cls, json_chunks: AsyncGenerator[str, None], **kwargs: Any
+            cls, json_chunks: AsyncGenerator[str, None], **kwargs: Any
     ) -> AsyncGenerator[BaseModel, None]:
         started = False
         potential_object = ""
-        async for chunk in json_chunks:
+        async for chunk, completion in json_chunks:
+            if not chunk:
+                continue
             potential_object += chunk
             if not started:
                 if "[" in chunk:
                     started = True
-                    potential_object = chunk[chunk.find("[") + 1 :]
+                    potential_object = chunk[chunk.find("[") + 1:]
                 continue
 
             task_json, potential_object = cls.get_object(potential_object, 0)
             if task_json:
                 assert cls.task_type is not None
                 obj = cls.task_type.model_validate_json(task_json, **kwargs)
+                obj.__dict__['raw_response'] = completion
                 yield obj
 
     @staticmethod
     def extract_json(
-        completion: Iterable[Any], mode: Mode
-    ) -> Generator[str, None, None]:
+            completion: Iterable[Any], mode: Mode
+    ) -> Generator[Tuple[str, None], None]:
         for chunk in completion:
             try:
                 if mode == Mode.ANTHROPIC_JSON:
                     if json_chunk := chunk.delta.text:
-                        yield json_chunk
+                        yield json_chunk, chunk
                 if mode == Mode.ANTHROPIC_TOOLS:
-                    yield chunk.delta.partial_json
+                    yield chunk.delta.partial_json, chunk
                 if mode == Mode.GEMINI_JSON:
-                    yield chunk.text
+                    yield chunk.text, chunk
                 elif chunk.choices:
                     if mode == Mode.FUNCTIONS:
                         Mode.warn_mode_functions_deprecation()
                         if json_chunk := chunk.choices[0].delta.function_call.arguments:
-                            yield json_chunk
+                            yield json_chunk, chunk
                     elif mode in {Mode.JSON, Mode.MD_JSON, Mode.JSON_SCHEMA}:
                         if json_chunk := chunk.choices[0].delta.content:
-                            yield json_chunk
+                            yield json_chunk, chunk
                     elif mode == Mode.TOOLS:
                         if json_chunk := chunk.choices[0].delta.tool_calls:
-                            yield json_chunk[0].function.arguments
+                            yield json_chunk[0].function.arguments, chunk
                     else:
                         raise NotImplementedError(
                             f"Mode {mode} is not supported for MultiTask streaming"
@@ -106,26 +112,26 @@ class IterableBase:
 
     @staticmethod
     async def extract_json_async(
-        completion: AsyncGenerator[Any, None], mode: Mode
-    ) -> AsyncGenerator[str, None]:
+            completion: AsyncGenerator[Any, None], mode: Mode
+    ) -> AsyncGenerator[Tuple[str, Any], None]:
         async for chunk in completion:
             try:
                 if mode == Mode.ANTHROPIC_JSON:
                     if json_chunk := chunk.delta.text:
-                        yield json_chunk
+                        yield json_chunk, chunk
                 if mode == Mode.ANTHROPIC_TOOLS:
-                    yield chunk.delta.partial_json
+                    yield chunk.delta.partial_json, chunk
                 elif chunk.choices:
                     if mode == Mode.FUNCTIONS:
                         Mode.warn_mode_functions_deprecation()
                         if json_chunk := chunk.choices[0].delta.function_call.arguments:
-                            yield json_chunk
+                            yield json_chunk, chunk
                     elif mode in {Mode.JSON, Mode.MD_JSON, Mode.JSON_SCHEMA}:
                         if json_chunk := chunk.choices[0].delta.content:
-                            yield json_chunk
+                            yield json_chunk, chunk
                     elif mode == Mode.TOOLS:
                         if json_chunk := chunk.choices[0].delta.tool_calls:
-                            yield json_chunk[0].function.arguments
+                            yield json_chunk[0].function.arguments, chunk
                     else:
                         raise NotImplementedError(
                             f"Mode {mode} is not supported for MultiTask streaming"
@@ -142,14 +148,14 @@ class IterableBase:
             if c == "}":
                 stack -= 1
                 if stack == 0:
-                    return s[start_index : i + 1], s[i + 2 :]
+                    return s[start_index: i + 1], s[i + 2:]
         return None, s
 
 
 def IterableModel(
-    subtask_class: type[BaseModel],
-    name: Optional[str] = None,
-    description: Optional[str] = None,
+        subtask_class: type[BaseModel],
+        name: Optional[str] = None,
+        description: Optional[str] = None,
 ) -> type[BaseModel]:
     """
     Dynamically create a IterableModel OpenAISchema that can be used to segment multiple

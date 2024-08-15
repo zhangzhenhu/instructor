@@ -2,7 +2,7 @@
 import json
 import logging
 from functools import wraps
-from typing import Annotated, Any, Optional, TypeVar, cast, get_origin, Literal, Union
+from typing import Annotated, Any, Optional, TypeVar, cast, get_origin, Literal, Union, Awaitable
 from enum import Enum
 import asyncio
 from docstring_parser import parse
@@ -380,7 +380,9 @@ class OpenAISchema(BaseModel):
         model = {}
         for field in tool_call:  # type: ignore
             model[field] = tool_call[field]
-        return cls.model_validate(model, context=validation_context, strict=strict)
+        obj = cls.model_validate(model, context=validation_context, strict=strict)
+        obj.__dict__['raw_response'] = completion
+        return obj
 
     @classmethod
     def parse_vertexai_json(
@@ -390,7 +392,10 @@ class OpenAISchema(BaseModel):
         strict: Optional[bool] = None,
     ) -> BaseModel:
         model = json.loads(completion.text)
-        return cls.model_validate(model, context=validation_context, strict=strict)
+        obj = cls.model_validate(model, context=validation_context, strict=strict)
+        obj.__dict__['raw_response'] = completion
+        return obj
+
 
     @classmethod
     def parse_cohere_tools(
@@ -401,9 +406,11 @@ class OpenAISchema(BaseModel):
     ) -> BaseModel:
         text = cast(str, completion.text)  # type: ignore - TODO update with cohere specific types
         extra_text = extract_json_from_codeblock(text)
-        return cls.model_validate_json(
+        obj = cls.model_validate_json(
             extra_text, context=validation_context, strict=strict
         )
+        obj.__dict__['raw_response'] = completion
+        return obj
 
     @classmethod
     def parse_functions(
@@ -416,11 +423,13 @@ class OpenAISchema(BaseModel):
         assert (
             message.function_call.name == cls.openai_schema["name"]  # type: ignore[index]
         ), "Function name does not match"
-        return cls.model_validate_json(
+        obj = cls.model_validate_json(
             message.function_call.arguments,  # type: ignore[attr-defined]
             context=validation_context,
             strict=strict,
         )
+        obj.__dict__['raw_response'] = completion
+        return obj
 
     @classmethod
     def parse_tools(
@@ -437,11 +446,13 @@ class OpenAISchema(BaseModel):
         assert (
             tool_call.function.name == cls.openai_schema["name"]  # type: ignore[index]
         ), "Tool name does not match"
-        return cls.model_validate_json(
+        obj = cls.model_validate_json(
             tool_call.function.arguments,  # type: ignore
             context=validation_context,
             strict=strict,
         )
+        obj.__dict__['raw_response'] = completion
+        return obj
 
     @classmethod
     def parse_json(
@@ -453,11 +464,14 @@ class OpenAISchema(BaseModel):
         message = completion.choices[0].message.content or ""
         message = extract_json_from_codeblock(message)
 
-        return cls.model_validate_json(
+        obj = cls.model_validate_json(
             message,
             context=validation_context,
             strict=strict,
         )
+        obj.__dict__['raw_response'] = completion
+        return obj
+
 
 
 def openai_schema_helper(cls: T) -> T:

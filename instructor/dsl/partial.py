@@ -19,6 +19,7 @@ from typing import (
     NoReturn,
     Optional,
     TypeVar,
+    Tuple,
 )
 from collections.abc import AsyncGenerator, Generator, Iterable
 from copy import deepcopy
@@ -35,7 +36,7 @@ class MakeFieldsOptional:
 
 
 def _make_field_optional(
-    field: FieldInfo,
+        field: FieldInfo,
 ) -> tuple[Any, FieldInfo]:
     tmp_field = deepcopy(field)
 
@@ -101,7 +102,7 @@ class PartialBase(Generic[T_Model]):
 
     @classmethod
     def from_streaming_response(
-        cls, completion: Iterable[Any], mode: Mode, **kwargs: Any
+            cls, completion: Iterable[Any], mode: Mode, **kwargs: Any
     ) -> Generator[T_Model, None, None]:
         json_chunks = cls.extract_json(completion, mode)
 
@@ -112,7 +113,7 @@ class PartialBase(Generic[T_Model]):
 
     @classmethod
     async def from_streaming_response_async(
-        cls, completion: AsyncGenerator[Any, None], mode: Mode, **kwargs: Any
+            cls, completion: AsyncGenerator[Any, None], mode: Mode, **kwargs: Any
     ) -> AsyncGenerator[T_Model, None]:
         json_chunks = cls.extract_json_async(completion, mode)
 
@@ -123,56 +124,58 @@ class PartialBase(Generic[T_Model]):
 
     @classmethod
     def model_from_chunks(
-        cls, json_chunks: Iterable[Any], **kwargs: Any
+            cls, json_chunks: Iterable[Any], **kwargs: Any
     ) -> Generator[T_Model, None, None]:
         potential_object = ""
         partial_model = cls.get_partial_model()
-        for chunk in json_chunks:
+        for chunk, _ in json_chunks:
             potential_object += chunk
             obj = from_json(
                 (potential_object or "{}").encode(), partial_mode="trailing-strings"
             )
             obj = partial_model.model_validate(obj, strict=None, **kwargs)
+            obj.__dict__['raw_response'] = _
             yield obj
 
     @classmethod
     async def model_from_chunks_async(
-        cls, json_chunks: AsyncGenerator[str, None], **kwargs: Any
+            cls, json_chunks: AsyncGenerator[str, None], **kwargs: Any
     ) -> AsyncGenerator[T_Model, None]:
         potential_object = ""
         partial_model = cls.get_partial_model()
-        async for chunk in json_chunks:
+        async for chunk, _ in json_chunks:
             potential_object += chunk
             obj = from_json(
                 (potential_object or "{}").encode(), partial_mode="trailing-strings"
             )
             obj = partial_model.model_validate(obj, strict=None, **kwargs)
+            obj.__dict__['raw_response'] = _
             yield obj
 
     @staticmethod
     def extract_json(
-        completion: Iterable[Any], mode: Mode
-    ) -> Generator[str, None, None]:
+            completion: Iterable[Any], mode: Mode
+    ) -> Generator[Tuple[str, Any], None, None]:
         for chunk in completion:
             try:
                 if mode == Mode.ANTHROPIC_JSON:
                     if json_chunk := chunk.delta.text:
-                        yield json_chunk
+                        yield json_chunk, chunk
                 if mode == Mode.ANTHROPIC_TOOLS:
-                    yield chunk.delta.partial_json
+                    yield chunk.delta.partial_json, chunk
                 if mode == Mode.GEMINI_JSON:
-                    yield chunk.text
+                    yield chunk.text, chunk
                 elif chunk.choices:
                     if mode == Mode.FUNCTIONS:
                         Mode.warn_mode_functions_deprecation()
                         if json_chunk := chunk.choices[0].delta.function_call.arguments:
-                            yield json_chunk
+                            yield json_chunk, chunk
                     elif mode in {Mode.JSON, Mode.MD_JSON, Mode.JSON_SCHEMA}:
                         if json_chunk := chunk.choices[0].delta.content:
-                            yield json_chunk
+                            yield json_chunk, chunk
                     elif mode == Mode.TOOLS:
                         if json_chunk := chunk.choices[0].delta.tool_calls:
-                            yield json_chunk[0].function.arguments
+                            yield json_chunk[0].function.arguments, chunk
                     else:
                         raise NotImplementedError(
                             f"Mode {mode} is not supported for MultiTask streaming"
@@ -182,26 +185,26 @@ class PartialBase(Generic[T_Model]):
 
     @staticmethod
     async def extract_json_async(
-        completion: AsyncGenerator[Any, None], mode: Mode
-    ) -> AsyncGenerator[str, None]:
+            completion: AsyncGenerator[Any, None], mode: Mode
+    ) -> AsyncGenerator[Tuple[str, Any], None]:
         async for chunk in completion:
             try:
                 if mode == Mode.ANTHROPIC_JSON:
                     if json_chunk := chunk.delta.text:
-                        yield json_chunk
+                        yield json_chunk, chunk
                 if mode == Mode.ANTHROPIC_TOOLS:
-                    yield chunk.delta.partial_json
+                    yield chunk.delta.partial_json, chunk
                 elif chunk.choices:
                     if mode == Mode.FUNCTIONS:
                         Mode.warn_mode_functions_deprecation()
                         if json_chunk := chunk.choices[0].delta.function_call.arguments:
-                            yield json_chunk
+                            yield json_chunk, chunk
                     elif mode in {Mode.JSON, Mode.MD_JSON, Mode.JSON_SCHEMA}:
                         if json_chunk := chunk.choices[0].delta.content:
-                            yield json_chunk
+                            yield json_chunk, chunk
                     elif mode == Mode.TOOLS:
                         if json_chunk := chunk.choices[0].delta.tool_calls:
-                            yield json_chunk[0].function.arguments
+                            yield json_chunk[0].function.arguments, chunk
                     else:
                         raise NotImplementedError(
                             f"Mode {mode} is not supported for MultiTask streaming"
@@ -221,9 +224,9 @@ class Partial(Generic[T_Model]):
     """
 
     def __new__(
-        cls,
-        *args: object,  # noqa :ARG003
-        **kwargs: object,  # noqa :ARG003
+            cls,
+            *args: object,  # noqa :ARG003
+            **kwargs: object,  # noqa :ARG003
     ) -> Partial[T_Model]:
         """Cannot instantiate.
 
@@ -233,9 +236,9 @@ class Partial(Generic[T_Model]):
         raise TypeError("Cannot instantiate abstract Partial class.")
 
     def __init_subclass__(
-        cls,
-        *args: object,
-        **kwargs: object,
+            cls,
+            *args: object,
+            **kwargs: object,
     ) -> NoReturn:
         """Cannot subclass.
 
@@ -245,8 +248,8 @@ class Partial(Generic[T_Model]):
         raise TypeError(f"Cannot subclass {cls.__module__}.Partial")
 
     def __class_getitem__(
-        cls,
-        wrapped_class: type[T_Model] | tuple[type[T_Model], type[MakeFieldsOptional]],
+            cls,
+            wrapped_class: type[T_Model] | tuple[type[T_Model], type[MakeFieldsOptional]],
     ) -> type[T_Model]:
         """Convert model to one that inherits from PartialBase.
 

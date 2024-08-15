@@ -28,25 +28,28 @@ class ParallelBase:
         }
 
     def from_response(
-        self,
-        response: Any,
-        mode: Mode,
-        validation_context: Optional[Any] = None,
-        strict: Optional[bool] = None,
+            self,
+            response: Any,
+            mode: Mode,
+            validation_context: Optional[Any] = None,
+            strict: Optional[bool] = None,
     ) -> Generator[BaseModel, None, None]:
-        #! We expect this from the OpenAISchema class, We should address
-        #! this with a protocol or an abstract class... @jxnlco
+        # ! We expect this from the OpenAISchema class, We should address
+        # ! this with a protocol or an abstract class... @jxnlco
         assert mode == Mode.PARALLEL_TOOLS, "Mode must be PARALLEL_TOOLS"
         for tool_call in response.choices[0].message.tool_calls:
             name = tool_call.function.name
             arguments = tool_call.function.arguments
-            yield self.registry[name].model_validate_json(
+            obj = self.registry[name].model_validate_json(
                 arguments, context=validation_context, strict=strict
             )
+            obj.__dict__['raw_response'] = response
+            yield obj
 
 
 if sys.version_info >= (3, 10):
     from types import UnionType
+
 
     def is_union_type(typehint: type[Iterable[T]]) -> bool:
         return get_origin(get_args(typehint)[0]) in (Union, UnionType)
