@@ -165,7 +165,12 @@ def process_response(
     # ? attaching usage data and the raw response to the model we return.
     if isinstance(model, IterableBase):
         logger.debug(f"Returning takes from IterableBase")
-        return [task for task in model.tasks]
+        tasks = []
+        for task in model.tasks:
+            task.__dict__['raw_response'] = response
+            tasks.append(task)
+        return tasks
+
 
     if isinstance(response_model, ParallelBase):
         logger.debug(f"Returning model from ParallelBase")
@@ -174,7 +179,7 @@ def process_response(
     if isinstance(model, AdapterBase):
         logger.debug(f"Returning model from AdapterBase")
         return model.content
-
+    model.__dict__['raw_response'] = response
     model._raw_response = response
     return model
 

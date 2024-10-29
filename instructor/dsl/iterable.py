@@ -39,7 +39,7 @@ class IterableBase:
     ) -> Generator[BaseModel, None, None]:
         started = False
         potential_object = ""
-        for chunk in json_chunks:
+        for chunk, rr in json_chunks:
             potential_object += chunk
             if not started:
                 if "[" in chunk:
@@ -51,6 +51,7 @@ class IterableBase:
             if task_json:
                 assert cls.task_type is not None
                 obj = cls.task_type.model_validate_json(task_json, **kwargs)
+                obj.__dict__['raw_response'] = rr
                 yield obj
 
     @classmethod
@@ -59,7 +60,7 @@ class IterableBase:
     ) -> AsyncGenerator[BaseModel, None]:
         started = False
         potential_object = ""
-        async for chunk in json_chunks:
+        async for chunk, rr in json_chunks:
             potential_object += chunk
             if not started:
                 if "[" in chunk:
@@ -71,6 +72,7 @@ class IterableBase:
             if task_json:
                 assert cls.task_type is not None
                 obj = cls.task_type.model_validate_json(task_json, **kwargs)
+                obj.__dict__['raw_response'] = rr
                 yield obj
 
     @staticmethod
@@ -81,11 +83,11 @@ class IterableBase:
             try:
                 if mode == Mode.ANTHROPIC_JSON:
                     if json_chunk := chunk.delta.text:
-                        yield json_chunk
+                        yield json_chunk, chunk
                 if mode == Mode.ANTHROPIC_TOOLS:
-                    yield chunk.delta.partial_json
+                    yield chunk.delta.partial_json, chunk
                 if mode == Mode.GEMINI_JSON:
-                    yield chunk.text
+                    yield chunk.text, chunk
                 if mode == Mode.GEMINI_TOOLS:
                     # Gemini seems to return the entire function_call and not a chunk?
                     import json
@@ -94,12 +96,12 @@ class IterableBase:
                     resp_dict = type(resp).to_dict(resp)  # type:ignore
 
                     if "args" in resp_dict:
-                        yield json.dumps(resp_dict["args"])
+                        yield json.dumps(resp_dict["args"]), chunk
                 elif chunk.choices:
                     if mode == Mode.FUNCTIONS:
                         Mode.warn_mode_functions_deprecation()
                         if json_chunk := chunk.choices[0].delta.function_call.arguments:
-                            yield json_chunk
+                            yield json_chunk, chunk
                     elif mode in {
                         Mode.JSON,
                         Mode.MD_JSON,
@@ -108,11 +110,11 @@ class IterableBase:
                         Mode.FIREWORKS_JSON,
                     }:
                         if json_chunk := chunk.choices[0].delta.content:
-                            yield json_chunk
+                            yield json_chunk, chunk
                     elif mode in {Mode.TOOLS, Mode.TOOLS_STRICT, Mode.FIREWORKS_TOOLS}:
                         if json_chunk := chunk.choices[0].delta.tool_calls:
                             if json_chunk[0].function.arguments is not None:
-                                yield json_chunk[0].function.arguments
+                                yield json_chunk[0].function.arguments, chunk
                     else:
                         raise NotImplementedError(
                             f"Mode {mode} is not supported for MultiTask streaming"
@@ -128,14 +130,14 @@ class IterableBase:
             try:
                 if mode == Mode.ANTHROPIC_JSON:
                     if json_chunk := chunk.delta.text:
-                        yield json_chunk
+                        yield json_chunk, chunk
                 if mode == Mode.ANTHROPIC_TOOLS:
-                    yield chunk.delta.partial_json
+                    yield chunk.delta.partial_json, chunk
                 elif chunk.choices:
                     if mode == Mode.FUNCTIONS:
                         Mode.warn_mode_functions_deprecation()
                         if json_chunk := chunk.choices[0].delta.function_call.arguments:
-                            yield json_chunk
+                            yield json_chunk, chunk
                     elif mode in {
                         Mode.JSON,
                         Mode.MD_JSON,
@@ -144,11 +146,11 @@ class IterableBase:
                         Mode.FIREWORKS_JSON,
                     }:
                         if json_chunk := chunk.choices[0].delta.content:
-                            yield json_chunk
+                            yield json_chunk, chunk
                     elif mode in {Mode.TOOLS, Mode.TOOLS_STRICT, Mode.FIREWORKS_TOOLS}:
                         if json_chunk := chunk.choices[0].delta.tool_calls:
                             if json_chunk[0].function.arguments is not None:
-                                yield json_chunk[0].function.arguments
+                                yield json_chunk[0].function.arguments, chunk
                     else:
                         raise NotImplementedError(
                             f"Mode {mode} is not supported for MultiTask streaming"

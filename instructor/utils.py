@@ -93,20 +93,20 @@ def extract_json_from_codeblock(content: str) -> str:
 def extract_json_from_stream(chunks: Iterable[str]) -> Generator[str, None, None]:
     capturing = False
     brace_count = 0
-    for chunk in chunks:
+    for chunk, _ in chunks:
         for char in chunk:
             if char == "{":
                 capturing = True
                 brace_count += 1
-                yield char
+                yield char, _
             elif char == "}" and capturing:
                 brace_count -= 1
-                yield char
+                yield char, _
                 if brace_count == 0:
                     capturing = False
                     break  # Cease yielding upon closing the current JSON object
             elif capturing:
-                yield char
+                yield char, _
 
 
 async def extract_json_from_stream_async(
@@ -114,20 +114,20 @@ async def extract_json_from_stream_async(
 ) -> AsyncGenerator[str, None]:
     capturing = False
     brace_count = 0
-    async for chunk in chunks:
+    async for chunk, _ in chunks:
         for char in chunk:
             if char == "{":
                 capturing = True
                 brace_count += 1
-                yield char
+                yield char, _
             elif char == "}" and capturing:
                 brace_count -= 1
-                yield char
+                yield char, _
                 if brace_count == 0:
                     capturing = False
                     break  # Cease yielding upon closing the current JSON object
             elif capturing:
-                yield char
+                yield char, _
 
 
 def update_total_usage(
